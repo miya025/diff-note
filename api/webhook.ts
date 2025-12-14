@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { GitHubClient } from '../src/github';
 import { LLMClient } from '../src/llm';
 import { shouldSkipPR, categorizeFiles } from '../src/skip';
+import { saveInstallation, deleteInstallation } from '../src/db';
 import { PullRequestInfo } from '../src/types';
 
 function verifyWebhookSignature(req: VercelRequest): boolean {
@@ -32,21 +33,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const event = req.headers['x-github-event'] as string;
   const payload = req.body;
 
-  if (event !== 'pull_request') {
-    return res.status(200).json({ message: 'Ignored event', event });
-  }
-
-  const action = payload.action;
-  if (!['opened', 'synchronize', 'reopened'].includes(action)) {
-    return res.status(200).json({ message: 'Ignored action', action });
-  }
-
   try {
-    await processPullRequest(payload);
-    return res.status(200).json({ message: 'Processed' });
+    switch (event) {
+      case 'installation':
+        await handleInstallation(payload);
+        return res.status(200).json({ message: 'Installation handled' });
+
+      case 'pull_request':
+        const action = payload.action;
+        if (!['opened', 'synchronize', 'reopened'].includes(action)) {
+          return res.status(200).json({ message: 'Ignored action', action });
+        }
+        await processPullRequest(payload);
+        return res.status(200).json({ message: 'Processed' });
+
+      default:
+        return res.status(200).json({ message: 'Ignored event', event });
+    }
   } catch (error) {
-    console.error('Error processing PR:', error);
+    console.error('Error handling webhook:', error);
     return res.status(500).json({ error: 'Processing failed' });
+  }
+}
+
+async function handleInstallation(payload: {
+  action: string;
+  installation: {
+    id: number;
+    account: {
+      login: string;
+      type: string;
+    };
+  };
+}) {
+  const { action, installation } = payload;
+
+  if (action === 'created') {
+    await saveInstallation(
+      installation.id,
+      installation.account.login,
+      installation.account.type
+    );
+    console.log(`Installation created: ${installation.account.login}`);
+  } else if (action === 'deleted') {
+    await deleteInstallation(installation.id);
+    console.log(`Installation deleted: ${installation.account.login}`);
   }
 }
 
@@ -60,15 +91,20 @@ async function processPullRequest(payload: {
     labels: Array<{ name: string }>;
   };
   repository: { owner: { login: string }; name: string };
+  installation: { id: number };
 }) {
-  const githubToken = process.env.GITHUB_TOKEN;
+  const installationId = payload.installation?.id;
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
 
-  if (!githubToken || !anthropicKey) {
-    throw new Error('Missing required environment variables');
+  if (!installationId) {
+    throw new Error('Missing installation ID');
   }
 
-  const github = new GitHubClient(githubToken);
+  if (!anthropicKey) {
+    throw new Error('Missing ANTHROPIC_API_KEY');
+  }
+
+  const github = await GitHubClient.fromInstallation(installationId);
   const llm = new LLMClient(anthropicKey);
 
   const owner = payload.repository.owner.login;
