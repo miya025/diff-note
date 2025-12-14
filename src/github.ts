@@ -1,5 +1,6 @@
 import { Octokit } from '@octokit/rest';
 import { FileDiff, PullRequestInfo, ProcessedDiff } from './types';
+import { getInstallationOctokit } from './auth';
 
 const SKIP_PATTERNS = [
   /package-lock\.json$/,
@@ -14,8 +15,17 @@ const SKIP_PATTERNS = [
 export class GitHubClient {
   private octokit: Octokit;
 
-  constructor(token: string) {
-    this.octokit = new Octokit({ auth: token });
+  constructor(octokit: Octokit) {
+    this.octokit = octokit;
+  }
+
+  static fromToken(token: string): GitHubClient {
+    return new GitHubClient(new Octokit({ auth: token }));
+  }
+
+  static async fromInstallation(installationId: number): Promise<GitHubClient> {
+    const octokit = await getInstallationOctokit(installationId);
+    return new GitHubClient(octokit);
   }
 
   async getPullRequest(owner: string, repo: string, pullNumber: number): Promise<PullRequestInfo> {

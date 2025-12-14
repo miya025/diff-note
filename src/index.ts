@@ -76,7 +76,7 @@ async function processPullRequest(payload: {
     return;
   }
 
-  const github = new GitHubClient(githubToken);
+  const github = GitHubClient.fromToken(githubToken);
   const llm = new LLMClient(anthropicKey);
 
   const owner = payload.repository.owner.login;
