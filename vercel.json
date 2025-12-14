@@ -1,19 +1,12 @@
 {
-  "version": 2,
-  "builds": [
+  "rewrites": [
     {
-      "src": "api/**/*.ts",
-      "use": "@vercel/node"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/webhook",
-      "dest": "/api/webhook"
+      "source": "/webhook",
+      "destination": "/api/webhook"
     },
     {
-      "src": "/health",
-      "dest": "/api/health"
+      "source": "/health",
+      "destination": "/api/health"
     }
   ]
 }
