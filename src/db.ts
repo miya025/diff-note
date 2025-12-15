@@ -129,3 +129,37 @@ export async function removeRepositories(repoIds: number[]): Promise<void> {
     console.error('Error removing repos:', error);
   }
 }
+
+// Auto-register repository if not exists (self-healing on PR events)
+export async function ensureRepositoryExists(
+  githubRepoId: number,
+  owner: string,
+  repoName: string,
+  installationId: number
+): Promise<void> {
+  const db = getSupabase();
+
+  // Check if repository exists
+  const { data: existingRepo } = await db.from('repositories')
+    .select('id')
+    .eq('github_repo_id', githubRepoId)
+    .single();
+
+  // If not exists, register it
+  if (!existingRepo) {
+    console.log(`Repository not found in DB. Auto-registering: ${owner}/${repoName}`);
+
+    const { error } = await db.from('repositories').insert({
+      github_repo_id: githubRepoId,
+      owner: owner,
+      name: repoName,
+      installation_id: installationId,
+      plan: 'free',
+      is_active: true,
+    });
+
+    if (error) {
+      console.error('Error auto-registering repo:', error);
+    }
+  }
+}

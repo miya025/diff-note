@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { GitHubClient } from '../src/github';
 import { LLMClient } from '../src/llm';
 import { shouldSkipPR } from '../src/skip';
-import { saveInstallation, deleteInstallation, saveRepositories, deactivateRepositories, removeRepositories, GitHubRepoPayload } from '../src/db';
+import { saveInstallation, deleteInstallation, saveRepositories, deactivateRepositories, removeRepositories, ensureRepositoryExists, GitHubRepoPayload } from '../src/db';
 import { PullRequestInfo, StructuredDiffOutput } from '../src/types';
 
 function verifyWebhookSignature(req: VercelRequest): boolean {
@@ -124,7 +124,7 @@ async function processPullRequest(payload: {
     head: { sha: string };
     labels: Array<{ name: string }>;
   };
-  repository: { owner: { login: string }; name: string };
+  repository: { id: number; owner: { login: string }; name: string };
   installation: { id: number };
 }) {
   const installationId = payload.installation?.id;
@@ -138,12 +138,20 @@ async function processPullRequest(payload: {
     throw new Error('Missing ANTHROPIC_API_KEY');
   }
 
-  const github = await GitHubClient.fromInstallation(installationId);
-  const llm = new LLMClient(anthropicKey);
-
   const owner = payload.repository.owner.login;
   const repo = payload.repository.name;
   const pullNumber = payload.pull_request.number;
+
+  // Auto-register repository if not in DB (self-healing)
+  await ensureRepositoryExists(
+    payload.repository.id,
+    owner,
+    repo,
+    installationId
+  );
+
+  const github = await GitHubClient.fromInstallation(installationId);
+  const llm = new LLMClient(anthropicKey);
 
   console.log(`Processing PR #${pullNumber} in ${owner}/${repo}`);
 
