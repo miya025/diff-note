@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { GitHubClient } from '../src/github';
 import { LLMClient } from '../src/llm';
 import { shouldSkipPR } from '../src/skip';
-import { saveInstallation, deleteInstallation } from '../src/db';
+import { saveInstallation, deleteInstallation, saveRepositories, deactivateRepositories, removeRepositories, GitHubRepoPayload } from '../src/db';
 import { PullRequestInfo, StructuredDiffOutput } from '../src/types';
 
 function verifyWebhookSignature(req: VercelRequest): boolean {
@@ -39,6 +39,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await handleInstallation(payload);
         return res.status(200).json({ message: 'Installation handled' });
 
+      case 'installation_repositories':
+        await handleInstallationRepositories(payload);
+        return res.status(200).json({ message: 'Installation repositories handled' });
+
       case 'pull_request':
         const action = payload.action;
         if (!['opened', 'synchronize', 'reopened'].includes(action)) {
@@ -65,8 +69,9 @@ async function handleInstallation(payload: {
       type: string;
     };
   };
+  repositories?: GitHubRepoPayload[];
 }) {
-  const { action, installation } = payload;
+  const { action, installation, repositories } = payload;
 
   if (action === 'created') {
     await saveInstallation(
@@ -75,9 +80,38 @@ async function handleInstallation(payload: {
       installation.account.type
     );
     console.log(`Installation created: ${installation.account.login}`);
+
+    // Save repositories if included in payload
+    if (repositories && repositories.length > 0) {
+      await saveRepositories(installation.id, repositories);
+      console.log(`Saved ${repositories.length} repositories`);
+    }
   } else if (action === 'deleted') {
+    await deactivateRepositories(installation.id);
     await deleteInstallation(installation.id);
     console.log(`Installation deleted: ${installation.account.login}`);
+  }
+}
+
+async function handleInstallationRepositories(payload: {
+  action: string;
+  installation: {
+    id: number;
+  };
+  repositories_added?: GitHubRepoPayload[];
+  repositories_removed?: Array<{ id: number }>;
+}) {
+  const { action, installation, repositories_added, repositories_removed } = payload;
+
+  if (action === 'added' && repositories_added && repositories_added.length > 0) {
+    await saveRepositories(installation.id, repositories_added);
+    console.log(`Added ${repositories_added.length} repositories to installation ${installation.id}`);
+  }
+
+  if (action === 'removed' && repositories_removed && repositories_removed.length > 0) {
+    const repoIds = repositories_removed.map(r => r.id);
+    await removeRepositories(repoIds);
+    console.log(`Removed ${repositories_removed.length} repositories from installation ${installation.id}`);
   }
 }
 

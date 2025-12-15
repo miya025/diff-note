@@ -59,3 +59,73 @@ export async function getInstallation(installationId: number): Promise<Installat
 
   return data;
 }
+
+// Repository types and functions
+export interface Repository {
+  id: number;
+  github_repo_id: number;
+  owner: string;
+  name: string;
+  installation_id: number;
+  plan: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface GitHubRepoPayload {
+  id: number;
+  name: string;
+  full_name: string;
+}
+
+export async function saveRepositories(
+  installationId: number,
+  repos: GitHubRepoPayload[]
+): Promise<void> {
+  const db = getSupabase();
+
+  for (const repo of repos) {
+    const [owner, name] = repo.full_name.split('/');
+
+    console.log(`Saving repository: ${repo.full_name}`);
+
+    const { error } = await db.from('repositories').upsert({
+      github_repo_id: repo.id,
+      owner: owner,
+      name: name,
+      installation_id: installationId,
+      plan: 'free',
+      is_active: true,
+    }, {
+      onConflict: 'github_repo_id',
+    });
+
+    if (error) {
+      console.error('Error saving repo:', error);
+    }
+  }
+}
+
+export async function deactivateRepositories(installationId: number): Promise<void> {
+  const db = getSupabase();
+
+  const { error } = await db.from('repositories')
+    .update({ is_active: false })
+    .eq('installation_id', installationId);
+
+  if (error) {
+    console.error('Error deactivating repos:', error);
+  }
+}
+
+export async function removeRepositories(repoIds: number[]): Promise<void> {
+  const db = getSupabase();
+
+  const { error } = await db.from('repositories')
+    .update({ is_active: false })
+    .in('github_repo_id', repoIds);
+
+  if (error) {
+    console.error('Error removing repos:', error);
+  }
+}
