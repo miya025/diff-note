@@ -1,7 +1,9 @@
 import { Octokit } from '@octokit/rest';
-import { FileDiff, PullRequestInfo, ProcessedDiff } from './types';
+import { FileDiff, PullRequestInfo, ProcessedDiff, StructuredDiffOutput } from './types';
 import { getInstallationOctokit } from './auth';
+import { DiffProcessor } from './diff-processor';
 
+// 後方互換用のスキップパターン（レガシー）
 const SKIP_PATTERNS = [
   /package-lock\.json$/,
   /yarn\.lock$/,
@@ -14,9 +16,11 @@ const SKIP_PATTERNS = [
 
 export class GitHubClient {
   private octokit: Octokit;
+  private diffProcessor: DiffProcessor;
 
   constructor(octokit: Octokit) {
     this.octokit = octokit;
+    this.diffProcessor = new DiffProcessor();
   }
 
   static fromToken(token: string): GitHubClient {
@@ -47,6 +51,38 @@ export class GitHubClient {
     };
   }
 
+  /**
+   * 構造化されたDiff出力を取得（新API）
+   * LLMに最適化されたカテゴリ別・優先度付きの差分データを返す
+   */
+  async getPRDiffStructured(
+    owner: string,
+    repo: string,
+    pullNumber: number,
+    prTitle: string
+  ): Promise<StructuredDiffOutput> {
+    const { data } = await this.octokit.pulls.listFiles({
+      owner,
+      repo,
+      pull_number: pullNumber,
+      per_page: 100,
+    });
+
+    const files: FileDiff[] = data.map(file => ({
+      filename: file.filename,
+      status: file.status as FileDiff['status'],
+      additions: file.additions,
+      deletions: file.deletions,
+      patch: file.patch,
+    }));
+
+    return this.diffProcessor.process(files, prTitle);
+  }
+
+  /**
+   * レガシーAPI（後方互換用）
+   * 既存のProcessedDiff形式を返す
+   */
   async getPRDiff(owner: string, repo: string, pullNumber: number): Promise<ProcessedDiff> {
     const { data } = await this.octokit.pulls.listFiles({
       owner,
