@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { GitHubClient } from '../src/github';
 import { LLMClient } from '../src/llm';
 import { shouldSkipPR } from '../src/skip';
-import { saveInstallation, deleteInstallation, saveRepositories, deactivateRepositories, removeRepositories, ensureRepositoryExists, GitHubRepoPayload } from '../src/db';
+import { saveInstallation, deleteInstallation, saveRepositories, deactivateRepositories, removeRepositories, ensureRepositoryExists, getRepositoryByGitHubId, checkAndIncrementUsage, GitHubRepoPayload } from '../src/db';
 import { PullRequestInfo, StructuredDiffOutput } from '../src/types';
 
 function verifyWebhookSignature(req: VercelRequest): boolean {
@@ -149,6 +149,20 @@ async function processPullRequest(payload: {
     repo,
     installationId
   );
+
+  // Get repository info and check usage limit
+  const repoData = await getRepositoryByGitHubId(payload.repository.id);
+  if (repoData) {
+    const usageCheck = await checkAndIncrementUsage(repoData.id, repoData.plan);
+
+    if (!usageCheck.allowed) {
+      console.log(`Usage limit reached for ${owner}/${repo}: ${usageCheck.reason}`);
+      // TODO: Post a comment to notify the user about the limit
+      return;
+    }
+
+    console.log(`Usage: ${usageCheck.currentCount} PRs this month (plan: ${repoData.plan})`);
+  }
 
   const github = await GitHubClient.fromInstallation(installationId);
   const llm = new LLMClient(anthropicKey);
