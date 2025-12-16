@@ -8,5 +8,18 @@
       "source": "/health",
       "destination": "/api/health"
     }
+  ],
+  "routes": [
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/webhook",
+      "dest": "/api/webhook"
+    },
+    {
+      "src": "/health",
+      "dest": "/api/health"
+    }
   ]
 }
