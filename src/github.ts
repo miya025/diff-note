@@ -1,7 +1,17 @@
 import { Octokit } from '@octokit/rest';
-import { FileDiff, PullRequestInfo, ProcessedDiff, StructuredDiffOutput } from './types';
+import { FileDiff, PullRequestInfo, ProcessedDiff, StructuredDiffOutput, CommitInfo } from './types';
 import { getInstallationOctokit } from './auth';
 import { DiffProcessor } from './diff-processor';
+
+/**
+ * Conventional Commits形式からタイプを抽出
+ * 例: "feat: add login" -> "feat"
+ *     "fix(auth): resolve token issue" -> "fix"
+ */
+function parseConventionalCommit(message: string): string | undefined {
+  const match = message.match(/^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+?\))?[!]?:/i);
+  return match ? match[1].toLowerCase() : undefined;
+}
 
 // 後方互換用のスキップパターン（レガシー）
 const SKIP_PATTERNS = [
@@ -59,16 +69,21 @@ export class GitHubClient {
     owner: string,
     repo: string,
     pullNumber: number,
-    prTitle: string
+    prTitle: string,
+    prBody?: string | null
   ): Promise<StructuredDiffOutput> {
-    const { data } = await this.octokit.pulls.listFiles({
-      owner,
-      repo,
-      pull_number: pullNumber,
-      per_page: 100,
-    });
+    // ファイル一覧とコミット一覧を並列取得
+    const [filesResponse, commits] = await Promise.all([
+      this.octokit.pulls.listFiles({
+        owner,
+        repo,
+        pull_number: pullNumber,
+        per_page: 100,
+      }),
+      this.getPRCommits(owner, repo, pullNumber),
+    ]);
 
-    const files: FileDiff[] = data.map(file => ({
+    const files: FileDiff[] = filesResponse.data.map(file => ({
       filename: file.filename,
       status: file.status as FileDiff['status'],
       additions: file.additions,
@@ -76,7 +91,7 @@ export class GitHubClient {
       patch: file.patch,
     }));
 
-    return this.diffProcessor.process(files, prTitle);
+    return this.diffProcessor.process(files, prTitle, pullNumber, prBody ?? undefined, commits);
   }
 
   /**
@@ -171,5 +186,23 @@ export class GitHubClient {
       issue_number: pullNumber,
       body,
     });
+  }
+
+  /**
+   * PRのコミット一覧を取得
+   */
+  async getPRCommits(owner: string, repo: string, pullNumber: number): Promise<CommitInfo[]> {
+    const { data } = await this.octokit.pulls.listCommits({
+      owner,
+      repo,
+      pull_number: pullNumber,
+      per_page: 100,
+    });
+
+    return data.map(commit => ({
+      sha: commit.sha,
+      message: commit.commit.message,
+      conventionalType: parseConventionalCommit(commit.commit.message),
+    }));
   }
 }

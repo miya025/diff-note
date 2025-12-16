@@ -204,11 +204,13 @@ https://buy.stripe.com/fZubJ2d5l3d06nO8h9ds400
   };
 
   // 構造化Diff APIを使用（カテゴリ分類・ノイズ除外・トークン予算管理済み）
+  // PR body も渡してLLMの意図理解を向上
   const structuredDiff = await github.getPRDiffStructured(
     owner,
     repo,
     pullNumber,
-    pr.title
+    pr.title,
+    pr.body
   );
 
   // レガシーDiffも取得（skipチェック用）

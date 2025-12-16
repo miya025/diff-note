@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { ProcessedDiff, GeneratedDocuments, StructuredDiffOutput } from './types';
+import { ProcessedDiff, GeneratedDocuments, StructuredDiffOutput, MeaningfulChange, EnhancedFileDiff } from './types';
 import { ADR_TRIGGER_PATTERNS } from './patterns';
 
 // ============================================
@@ -161,6 +161,14 @@ export class LLMClient {
    * PR要約用プロンプトを構築（Few-shot付き）
    */
   private buildPRSummaryPrompt(diff: StructuredDiffOutput): string {
+    // コミットメッセージのサマリーを作成
+    const commitSummary = this.buildCommitSummary(diff.metadata.commits);
+
+    // PR説明文（長すぎる場合はトランケート）
+    const prBody = diff.metadata.prBody
+      ? this.truncateText(diff.metadata.prBody, 500)
+      : undefined;
+
     return `以下のGitHub PR差分を読み、PRレビュー担当者向けに要約を作成してください。
 
 ---
@@ -217,12 +225,42 @@ PR タイトル: 商品検索APIの新規追加
 ---
 **今回のPR:**
 PR タイトル: ${diff.metadata.prTitle}
+${prBody ? `PR 説明: ${prBody}` : ''}
 変更ファイル数: ${diff.metadata.fileCount}
 追加行数: ${diff.metadata.totalAdditions}
 削除行数: ${diff.metadata.totalDeletions}
+${commitSummary ? `\nコミットメッセージ:\n${commitSummary}` : ''}
 
 差分内容:
 ${diff.legacySummary}`;
+  }
+
+  /**
+   * コミットメッセージのサマリーを作成
+   */
+  private buildCommitSummary(commits: { sha: string; message: string; conventionalType?: string }[]): string {
+    if (!commits || commits.length === 0) return '';
+
+    // 最大5件まで表示
+    const displayCommits = commits.slice(0, 5);
+    const lines = displayCommits.map(c => {
+      const firstLine = c.message.split('\n')[0];
+      return `- ${this.truncateText(firstLine, 80)}`;
+    });
+
+    if (commits.length > 5) {
+      lines.push(`... 他 ${commits.length - 5} 件`);
+    }
+
+    return lines.join('\n');
+  }
+
+  /**
+   * テキストをトランケート
+   */
+  private truncateText(text: string, maxLength: number): string {
+    if (text.length <= maxLength) return text;
+    return text.slice(0, maxLength) + '...';
   }
 
   /**
@@ -231,13 +269,8 @@ ${diff.legacySummary}`;
   private async generateReadmeChangesFromStructured(
     diff: StructuredDiffOutput
   ): Promise<string | undefined> {
-    // 閾値チェック
-    if (diff.metadata.totalAdditions + diff.metadata.totalDeletions < 20) {
-      return undefined;
-    }
-
-    // README関連の変更がない場合はスキップ
-    if (diff.summary.readmeRelevant.length === 0) {
+    // README更新すべきかの総合判定
+    if (!this.shouldGenerateReadme(diff)) {
       return undefined;
     }
 
@@ -255,6 +288,50 @@ ${diff.legacySummary}`;
     return response.content[0].type === 'text'
       ? response.content[0].text
       : undefined;
+  }
+
+  /**
+   * README更新すべきかを総合判定
+   */
+  private shouldGenerateReadme(diff: StructuredDiffOutput): boolean {
+    const { commits } = diff.metadata;
+    const totalChanges = diff.metadata.totalAdditions + diff.metadata.totalDeletions;
+
+    // 1. コミットメッセージにfeat:が含まれる場合は更新すべき
+    const hasFeatCommit = commits.some(c => c.conventionalType === 'feat');
+    if (hasFeatCommit && totalChanges >= 10) {
+      return true;
+    }
+
+    // 2. README関連の変更がある場合
+    if (diff.summary.readmeRelevant.length > 0 && totalChanges >= 20) {
+      return true;
+    }
+
+    // 3. 新規APIエンドポイント追加を検出
+    const allFiles = Object.values(diff.categories).flat();
+    const hasNewEndpoint = allFiles.some(f =>
+      f.changeType === 'feature' &&
+      (f.filename.includes('route') || f.filename.includes('api') || f.filename.includes('controller')) &&
+      f.status === 'added'
+    );
+    if (hasNewEndpoint) {
+      return true;
+    }
+
+    // 4. package.jsonに新しい依存関係が追加された
+    const hasNewDependency = allFiles.some((f: EnhancedFileDiff) =>
+      f.filename.includes('package.json') &&
+      f.meaningfulChanges.some((c: MeaningfulChange) =>
+        c.type === 'added' &&
+        (c.content.includes('"dependencies"') || c.content.includes('"devDependencies"'))
+      )
+    );
+    if (hasNewDependency && totalChanges >= 30) {
+      return true;
+    }
+
+    return false;
   }
 
   /**
@@ -305,7 +382,9 @@ ${diff.legacySummary}
     }
 
     const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const prompt = this.buildADRPrompt(diff, today);
+    const prNumber = diff.metadata.prNumber;
+    const adrPrefix = `${today}-PR${prNumber}`;
+    const prompt = this.buildADRPrompt(diff, adrPrefix);
 
     const response = await this.client.messages.create({
       model: LLM_CONFIG.adr.model,
@@ -348,8 +427,14 @@ ${diff.legacySummary}
 
   /**
    * ADR用プロンプトを構築（Few-shot付き）
+   * @param adrPrefix 日付+PR番号のプレフィックス (例: "20241216-PR42")
    */
-  private buildADRPrompt(diff: StructuredDiffOutput, today: string): string {
+  private buildADRPrompt(diff: StructuredDiffOutput, adrPrefix: string): string {
+    // PR説明文（長すぎる場合はトランケート）
+    const prBody = diff.metadata.prBody
+      ? this.truncateText(diff.metadata.prBody, 300)
+      : '(なし)';
+
     return `以下のPR変更に基づき、ADR（Architecture Decision Record）のドラフトを生成してください。
 
 ---
@@ -363,7 +448,7 @@ PR 説明: セキュリティ要件の変更に伴い、ステートレスJWT認
 - migration/20241215_add_sessions_table.sql
 
 **理想的な出力:**
-# ADR-20241215-セッション認証への移行
+# ADR-20241215-PR42-セッション認証への移行
 
 ## Context
 現行のJWT認証方式では、トークンの即時無効化が困難であり、セキュリティインシデント発生時のリスク対応に課題があった。
@@ -389,7 +474,7 @@ PR 説明: インフラコスト削減のため移行
 - prisma/schema.prisma (スキーマ定義の更新)
 
 **理想的な出力:**
-# ADR-20241215-PostgreSQLからMySQLへのデータベース移行
+# ADR-20241216-PR15-PostgreSQLからMySQLへのデータベース移行
 
 ## Context
 Aurora PostgreSQLとAurora MySQLのコスト差（約30%）があり、チームのMySQL経験も豊富なため移行が妥当と判断した。
@@ -407,13 +492,13 @@ Aurora PostgreSQLとAurora MySQLのコスト差（約30%）があり、チーム
 ---
 **今回のPR:**
 PR タイトル: ${diff.metadata.prTitle}
-PR 説明: (PRから取得)
+PR 説明: ${prBody}
 
 変更内容:
 ${diff.legacySummary}
 
 ADRを以下の形式で出力してください:
-# ADR-${today}-タイトル`;
+# ADR-${adrPrefix}-タイトル`;
   }
 
   // ============================================

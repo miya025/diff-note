@@ -11,6 +11,7 @@ import {
   ProcessingStats,
   MeaningfulChange,
   CategorySummary,
+  CommitInfo,
 } from './types';
 
 import {
@@ -31,10 +32,22 @@ export class DiffProcessor {
   private readonly TOTAL_TOKEN_BUDGET = 3000;
   private readonly CHARS_PER_TOKEN = 4; // 概算
 
+  // コミットメッセージから抽出された主要な変更タイプ（process時に設定）
+  private dominantCommitType: ChangeType | null = null;
+
   /**
    * メインエントリポイント: 生のファイル差分を構造化出力に変換
    */
-  public process(files: FileDiff[], prTitle: string): StructuredDiffOutput {
+  public process(
+    files: FileDiff[],
+    prTitle: string,
+    prNumber?: number,
+    prBody?: string,
+    commits?: CommitInfo[]
+  ): StructuredDiffOutput {
+    // コミットメッセージから主要な変更タイプを判定
+    this.dominantCommitType = this.detectDominantChangeType(commits);
+
     // Step 1: スキップパターンでフィルタリング
     const filteredFiles = this.filterSkippedFiles(files);
 
@@ -51,7 +64,45 @@ export class DiffProcessor {
     const truncatedCategories = this.applyTruncation(categorized);
 
     // Step 6: 構造化出力を生成
-    return this.buildOutput(truncatedCategories, prTitle, files.length);
+    return this.buildOutput(truncatedCategories, prTitle, files.length, prNumber, prBody, commits);
+  }
+
+  /**
+   * コミットメッセージから主要な変更タイプを検出
+   * Conventional Commits形式を優先的に解析
+   */
+  private detectDominantChangeType(commits?: CommitInfo[]): ChangeType | null {
+    if (!commits || commits.length === 0) return null;
+
+    // Conventional Commitsのタイプをカウント
+    const typeCounts: Record<string, number> = {};
+    for (const commit of commits) {
+      if (commit.conventionalType) {
+        typeCounts[commit.conventionalType] = (typeCounts[commit.conventionalType] || 0) + 1;
+      }
+    }
+
+    // 最も多いタイプを取得
+    const sortedTypes = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
+    if (sortedTypes.length === 0) return null;
+
+    const dominantType = sortedTypes[0][0];
+
+    // Conventional CommitsタイプをChangeTypeにマッピング
+    const typeMap: Record<string, ChangeType> = {
+      feat: 'feature',
+      fix: 'fix',
+      docs: 'docs',
+      style: 'style',
+      refactor: 'refactor',
+      perf: 'refactor',
+      test: 'feature',
+      build: 'config',
+      ci: 'config',
+      chore: 'config',
+    };
+
+    return typeMap[dominantType] || null;
   }
 
   /**
@@ -225,6 +276,7 @@ export class DiffProcessor {
 
   /**
    * 変更タイプを検出
+   * コミットメッセージから判定された主要タイプを優先
    */
   private detectChangeType(
     file: FileDiff,
@@ -235,11 +287,6 @@ export class DiffProcessor {
     // ドキュメント変更
     if (file.filename.match(/\.(md|txt|rst)$/)) {
       return 'docs';
-    }
-
-    // 新規ファイル（おそらく機能追加）
-    if (file.status === 'added') {
-      return 'feature';
     }
 
     // 依存関係変更
@@ -255,6 +302,23 @@ export class DiffProcessor {
       return 'config';
     }
 
+    // コミットメッセージから判定された主要タイプがある場合は優先
+    if (this.dominantCommitType) {
+      // ただし、ファイル単位の明確なシグナルがある場合は上書き
+      if (file.status === 'added' && this.dominantCommitType !== 'fix') {
+        return 'feature';
+      }
+      if (file.status === 'removed') {
+        return this.dominantCommitType;
+      }
+      return this.dominantCommitType;
+    }
+
+    // 新規ファイル（おそらく機能追加）
+    if (file.status === 'added') {
+      return 'feature';
+    }
+
     // 修正パターン
     if (
       content.includes('fix') ||
@@ -265,11 +329,10 @@ export class DiffProcessor {
       return 'fix';
     }
 
-    // リファクタパターン（追加と削除が同数）
-    if (
-      changes.filter((c) => c.type === 'added').length ===
-      changes.filter((c) => c.type === 'removed').length
-    ) {
+    // リファクタパターン（追加と削除が同数、かつ一定数以上）
+    const addedCount = changes.filter((c) => c.type === 'added').length;
+    const removedCount = changes.filter((c) => c.type === 'removed').length;
+    if (addedCount > 0 && addedCount === removedCount) {
       return 'refactor';
     }
 
@@ -438,22 +501,28 @@ export class DiffProcessor {
   private buildOutput(
     categories: CategorizedFiles,
     prTitle: string,
-    originalFileCount: number
+    originalFileCount: number,
+    prNumber?: number,
+    prBody?: string,
+    commits?: CommitInfo[]
   ): StructuredDiffOutput {
     const stats = this.calculateStats(categories, originalFileCount);
 
     return {
       metadata: {
         prTitle,
+        prNumber: prNumber ?? 0,
+        prBody,
         totalAdditions: this.sumField(categories, 'additions'),
         totalDeletions: this.sumField(categories, 'deletions'),
         fileCount: stats.processedFiles,
         stats,
+        commits: commits ?? [],
       },
       categories,
       summary: {
         prRelevant: this.buildPRRelevantSummary(categories),
-        readmeRelevant: this.buildReadmeRelevantSummary(categories),
+        readmeRelevant: this.buildReadmeRelevantSummary(categories, commits),
         adrRelevant: this.buildADRRelevantSummary(categories),
       },
       legacySummary: this.buildLegacySummary(categories),
@@ -490,10 +559,12 @@ export class DiffProcessor {
   }
 
   /**
-   * README関連のサマリーを生成（機能と修正のみ）
+   * README関連のサマリーを生成
+   * コミットメッセージとdiff内容から総合的に判定
    */
   private buildReadmeRelevantSummary(
-    categories: CategorizedFiles
+    categories: CategorizedFiles,
+    commits?: CommitInfo[]
   ): CategorySummary[] {
     const relevantCategories: FileCategory[] = [
       'backend',
@@ -502,7 +573,30 @@ export class DiffProcessor {
     ];
     const relevantTypes: ChangeType[] = ['feature', 'fix'];
 
-    return this.filterSummaries(categories, relevantCategories, relevantTypes);
+    // 基本のフィルタリング
+    const baseSummaries = this.filterSummaries(categories, relevantCategories, relevantTypes);
+
+    // コミットメッセージにfeat:が含まれる場合は、README更新が必要と判断
+    const hasFeatCommit = commits?.some(c => c.conventionalType === 'feat') ?? false;
+
+    // feat:コミットがあるが、baseSummariesが空の場合は追加判定
+    if (hasFeatCommit && baseSummaries.length === 0) {
+      // backendまたはfrontendの変更があれば追加
+      for (const cat of ['backend', 'frontend'] as FileCategory[]) {
+        const files = categories[cat];
+        if (files.length > 0) {
+          baseSummaries.push({
+            category: cat,
+            files: files.map(f => f.filename),
+            highlights: this.extractHighlights(files),
+            hasBreakingChanges: this.detectBreakingChanges(files),
+            changeTypes: [...new Set(files.map(f => f.changeType))],
+          });
+        }
+      }
+    }
+
+    return baseSummaries;
   }
 
   /**

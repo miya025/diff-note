@@ -41,6 +41,16 @@ export interface SkipReason {
   reason?: string;
 }
 
+/**
+ * PRのコミット情報
+ */
+export interface CommitInfo {
+  sha: string;
+  message: string;
+  /** Conventional Commits形式から抽出されたタイプ (feat, fix, refactor等) */
+  conventionalType?: string;
+}
+
 // ============================================
 // Enhanced Diff Processing Types
 // ============================================
@@ -113,10 +123,14 @@ export interface CategorySummary {
 export interface StructuredDiffOutput {
   metadata: {
     prTitle: string;
+    prNumber: number;
+    prBody?: string;
     totalAdditions: number;
     totalDeletions: number;
     fileCount: number;
     stats: ProcessingStats;
+    /** PRのコミット情報 */
+    commits: CommitInfo[];
   };
   categories: CategorizedFiles;
   summary: {
