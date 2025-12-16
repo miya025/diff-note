@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { GitHubClient } from '../src/github';
 import { LLMClient } from '../src/llm';
 import { shouldSkipPR } from '../src/skip';
-import { saveInstallation, deleteInstallation, saveRepositories, deactivateRepositories, removeRepositories, ensureRepositoryExists, getRepositoryByGitHubId, checkAndIncrementUsage, GitHubRepoPayload } from '../src/db';
+import { saveInstallation, deleteInstallation, saveRepositories, deactivateRepositories, removeRepositories, ensureRepositoryExists, getRepositoryByGitHubId, checkAndIncrementUsage, isAlreadyProcessed, recordPRProcessed, GitHubRepoPayload } from '../src/db';
 import { PullRequestInfo, StructuredDiffOutput } from '../src/types';
 
 function verifyWebhookSignature(req: VercelRequest): boolean {
@@ -141,6 +141,7 @@ async function processPullRequest(payload: {
   const owner = payload.repository.owner.login;
   const repo = payload.repository.name;
   const pullNumber = payload.pull_request.number;
+  const commitSha = payload.pull_request.head.sha;
 
   // Auto-register repository if not in DB (self-healing)
   await ensureRepositoryExists(
@@ -153,6 +154,13 @@ async function processPullRequest(payload: {
   // Get repository info and check usage limit
   const repoData = await getRepositoryByGitHubId(payload.repository.id);
   if (repoData) {
+    // Idempotency check: skip if already processed this commit
+    const alreadyProcessed = await isAlreadyProcessed(repoData.id, pullNumber, commitSha);
+    if (alreadyProcessed) {
+      console.log(`Already processed commit ${commitSha} for PR #${pullNumber}. Skipping.`);
+      return;
+    }
+
     const usageCheck = await checkAndIncrementUsage(repoData.id, repoData.plan);
 
     if (!usageCheck.allowed) {
@@ -237,4 +245,9 @@ async function processPullRequest(payload: {
 
   await github.postPRComment(owner, repo, pullNumber, comment);
   console.log(`Posted comment to PR #${pullNumber}`);
+
+  // Record successful processing for idempotency
+  if (repoData) {
+    await recordPRProcessed(repoData.id, pullNumber, commitSha);
+  }
 }

@@ -256,3 +256,43 @@ export async function checkAndIncrementUsage(
     currentCount: currentCount + 1,
   };
 }
+
+// Check if PR commit has already been processed (idempotency)
+export async function isAlreadyProcessed(
+  repoId: string,
+  prNumber: number,
+  sha: string
+): Promise<boolean> {
+  const db = getSupabase();
+
+  const { data } = await db
+    .from('pr_operations')
+    .select('id')
+    .eq('repo_id', repoId)
+    .eq('pr_number', prNumber)
+    .eq('sha', sha)
+    .eq('status', 'success')
+    .single();
+
+  return !!data;
+}
+
+// Record successful PR processing
+export async function recordPRProcessed(
+  repoId: string,
+  prNumber: number,
+  sha: string
+): Promise<void> {
+  const db = getSupabase();
+
+  const { error } = await db.from('pr_operations').insert({
+    repo_id: repoId,
+    pr_number: prNumber,
+    sha: sha,
+    status: 'success',
+  });
+
+  if (error) {
+    console.error('Error recording PR operation:', error);
+  }
+}
