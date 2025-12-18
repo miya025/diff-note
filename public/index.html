@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Diff Note - GitHubのPR差分を解析するAIアシスタント</title>
+  <title>Diff Note - ドキュメント、もう書かなくていいです</title>
+  <meta name="description" content="README更新、ADR作成、PR要約。Diff Noteがあなたの代わりに『開発の記録』を自動化します。">
   <style>
     * {
       margin: 0;
@@ -12,155 +13,400 @@
     }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      line-height: 1.6;
-      color: #333;
-      background-color: #f9fafb;
+      line-height: 1.7;
+      color: #24292f;
+      background-color: #ffffff;
     }
     .container {
-      max-width: 800px;
+      max-width: 720px;
       margin: 0 auto;
-      padding: 40px 20px;
+      padding: 0 24px;
     }
-    header {
-      margin-bottom: 48px;
+
+    /* Hero */
+    .hero {
+      padding: 80px 0 64px;
       text-align: center;
     }
-    h1 {
-      font-size: 2.5rem;
-      font-weight: bold;
-      color: #111;
-      margin-bottom: 12px;
-    }
-    .tagline {
-      font-size: 1.2rem;
-      color: #666;
-    }
-    section {
-      background: #fff;
-      border-radius: 12px;
-      padding: 32px;
+    .hero-label {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #0969da;
+      background: #ddf4ff;
+      padding: 4px 12px;
+      border-radius: 16px;
       margin-bottom: 24px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      letter-spacing: 0.02em;
     }
-    h2 {
-      font-size: 1.4rem;
+    .hero h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: #1f2328;
       margin-bottom: 16px;
-      color: #111;
+      line-height: 1.2;
     }
-    ul {
+    .hero-sub {
+      font-size: 1.1rem;
+      color: #656d76;
+      max-width: 560px;
+      margin: 0 auto 32px;
+    }
+    .cta-primary {
+      display: inline-block;
+      padding: 14px 28px;
+      background: #1f883d;
+      color: #fff;
+      text-decoration: none;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 1rem;
+      transition: background 0.15s;
+    }
+    .cta-primary:hover {
+      background: #1a7f37;
+    }
+    .cta-note {
+      display: block;
+      margin-top: 12px;
+      font-size: 0.85rem;
+      color: #656d76;
+    }
+
+    /* Section base */
+    section {
+      padding: 64px 0;
+      border-top: 1px solid #d0d7de;
+    }
+    section h2 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: #1f2328;
+      margin-bottom: 24px;
+    }
+    section p {
+      color: #656d76;
+      margin-bottom: 16px;
+    }
+
+    /* Why section */
+    .why-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-top: 24px;
+    }
+    @media (max-width: 600px) {
+      .why-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .why-card {
+      background: #f6f8fa;
+      border: 1px solid #d0d7de;
+      border-radius: 8px;
+      padding: 20px;
+    }
+    .why-card h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #1f2328;
+      margin-bottom: 8px;
+    }
+    .why-card p {
+      font-size: 0.9rem;
+      margin-bottom: 0;
+    }
+    .why-card .tool-name {
+      font-weight: 600;
+      color: #0969da;
+    }
+
+    /* Features */
+    .features-list {
       list-style: none;
-      padding: 0;
+      margin-top: 24px;
     }
-    ul li {
-      padding: 8px 0;
-      padding-left: 24px;
+    .features-list li {
+      display: flex;
+      gap: 16px;
+      padding: 20px 0;
+      border-bottom: 1px solid #d0d7de;
+    }
+    .features-list li:last-child {
+      border-bottom: none;
+    }
+    .feature-icon {
+      flex-shrink: 0;
+      width: 40px;
+      height: 40px;
+      background: #ddf4ff;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+    }
+    .feature-content h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #1f2328;
+      margin-bottom: 4px;
+    }
+    .feature-content p {
+      font-size: 0.9rem;
+      margin-bottom: 0;
+    }
+    .feature-tag {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 600;
+      background: #dafbe1;
+      color: #1a7f37;
+      padding: 2px 8px;
+      border-radius: 12px;
+      margin-left: 8px;
+    }
+
+    /* Pricing */
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-top: 24px;
+    }
+    @media (max-width: 600px) {
+      .pricing-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .pricing-card {
+      border: 1px solid #d0d7de;
+      border-radius: 8px;
+      padding: 24px;
+    }
+    .pricing-card.featured {
+      border: 2px solid #0969da;
       position: relative;
     }
-    ul li::before {
+    .pricing-card.featured::before {
+      content: "おすすめ";
+      position: absolute;
+      top: -10px;
+      left: 16px;
+      background: #0969da;
+      color: #fff;
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 2px 10px;
+      border-radius: 12px;
+    }
+    .pricing-card h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #656d76;
+      margin-bottom: 8px;
+    }
+    .pricing-card .price {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #1f2328;
+    }
+    .pricing-card .price span {
+      font-size: 0.9rem;
+      font-weight: 400;
+      color: #656d76;
+    }
+    .pricing-card .price-note {
+      font-size: 0.85rem;
+      color: #656d76;
+      margin-top: 4px;
+      margin-bottom: 16px;
+    }
+    .pricing-card ul {
+      list-style: none;
+      margin-bottom: 20px;
+    }
+    .pricing-card ul li {
+      font-size: 0.9rem;
+      color: #656d76;
+      padding: 6px 0;
+      padding-left: 20px;
+      position: relative;
+    }
+    .pricing-card ul li::before {
       content: "✓";
       position: absolute;
       left: 0;
-      color: #22c55e;
-      font-weight: bold;
+      color: #1a7f37;
+      font-weight: 600;
     }
-    .pricing-card {
-      border: 2px solid #3b82f6;
-      border-radius: 12px;
-      padding: 24px;
+    .pricing-cta {
+      display: block;
       text-align: center;
-    }
-    .plan-name {
-      font-size: 1.2rem;
-      font-weight: bold;
-      color: #3b82f6;
-      margin-bottom: 8px;
-    }
-    .price {
-      font-size: 2rem;
-      font-weight: bold;
-      color: #111;
-    }
-    .price span {
-      font-size: 1rem;
-      font-weight: normal;
-      color: #666;
-    }
-    .plan-desc {
-      color: #666;
-      margin-top: 8px;
-    }
-    .cta-button {
-      display: inline-block;
-      margin-top: 20px;
-      padding: 12px 32px;
-      background-color: #3b82f6;
-      color: #fff;
+      padding: 12px;
+      border-radius: 6px;
+      font-weight: 600;
       text-decoration: none;
-      border-radius: 8px;
-      font-weight: bold;
-      transition: background-color 0.2s;
-    }
-    .cta-button:hover {
-      background-color: #2563eb;
-    }
-    footer {
-      text-align: center;
-      padding-top: 24px;
-      border-top: 1px solid #e5e7eb;
       font-size: 0.9rem;
-      color: #666;
+      transition: all 0.15s;
+    }
+    .pricing-cta.primary {
+      background: #1f883d;
+      color: #fff;
+    }
+    .pricing-cta.primary:hover {
+      background: #1a7f37;
+    }
+    .pricing-cta.secondary {
+      background: #f6f8fa;
+      color: #24292f;
+      border: 1px solid #d0d7de;
+    }
+    .pricing-cta.secondary:hover {
+      background: #eaeef2;
+    }
+
+    /* Value prop */
+    .value-box {
+      background: #f6f8fa;
+      border: 1px solid #d0d7de;
+      border-radius: 8px;
+      padding: 24px;
+      margin-top: 32px;
+      text-align: center;
+    }
+    .value-box p {
+      margin-bottom: 0;
+      font-size: 0.95rem;
+    }
+    .value-box strong {
+      color: #1f2328;
+    }
+
+    /* Footer */
+    footer {
+      padding: 32px 0;
+      border-top: 1px solid #d0d7de;
+      text-align: center;
+      font-size: 0.85rem;
+      color: #656d76;
     }
     footer a {
-      color: #3b82f6;
+      color: #0969da;
       text-decoration: none;
     }
     footer a:hover {
       text-decoration: underline;
     }
+    footer .footer-links {
+      margin-bottom: 12px;
+    }
+    footer .footer-links a {
+      margin: 0 12px;
+    }
   </style>
 </head>
 <body>
   <div class="container">
-    <header>
-      <h1>Diff Note</h1>
-      <p class="tagline">GitHubのPR差分を解析し、ドキュメントを自動更新するAIアシスタント</p>
+    <!-- Hero -->
+    <header class="hero">
+      <span class="hero-label">GitHub App</span>
+      <h1>ドキュメント、<br>もう書かなくていいです</h1>
+      <p class="hero-sub">README更新、ADR作成、PR要約。<br>Diff Noteがあなたの代わりに「開発の記録」を自動化します。</p>
+      <a href="https://github.com/apps/diff-note" class="cta-primary">GitHubでインストール</a>
+      <span class="cta-note">月10件まで無料で使えます</span>
     </header>
 
-    <main>
-      <section>
-        <h2>機能概要</h2>
-        <ul>
-          <li>PRの内容をAIが要約してコメント</li>
-          <li>READMEの更新差分を自動生成</li>
-          <li>アーキテクチャ決定記録（ADR）のドラフト作成</li>
-          <li>日本語でのレビュー文化に最適化</li>
-        </ul>
-      </section>
-
-      <section>
-        <h2>料金プラン</h2>
-        <div class="pricing-card">
-          <p class="plan-name">Pro Plan</p>
-          <p class="price">¥2,980 <span>/ 月（税込）</span></p>
-          <p class="plan-desc">月間PR解析数：無制限</p>
-          <a href="https://github.com/apps/diff-note" class="cta-button">GitHub Appをインストール</a>
+    <!-- Why Diff Note -->
+    <section>
+      <h2>Copilotとの違い</h2>
+      <p>GitHub Copilotは「コードを書く」のが得意。<br>Diff Noteは「ドキュメントを守る」のが仕事です。</p>
+      <div class="why-grid">
+        <div class="why-card">
+          <h3><span class="tool-name">GitHub Copilot</span></h3>
+          <p>コードの補完・生成<br>開発速度の向上</p>
         </div>
-      </section>
+        <div class="why-card">
+          <h3><span class="tool-name">Diff Note</span></h3>
+          <p>変更の記録・説明<br>運用・保守の負担軽減</p>
+        </div>
+      </div>
+      <div class="value-box">
+        <p>役割が違うから、<strong>併用がベスト</strong>。<br>Copilotが書いたコードの「意味」を、Diff Noteが記録します。</p>
+      </div>
+    </section>
 
-      <section>
-        <h2>使い方</h2>
-        <ul>
-          <li>GitHub AppをリポジトリにインストールAnthrop</li>
-          <li>PRを作成または更新すると自動でAIが解析</li>
-          <li>PRコメントとしてサマリーが投稿されます</li>
-        </ul>
-      </section>
-    </main>
+    <!-- Features -->
+    <section>
+      <h2>3つの自動化</h2>
+      <p>PRをマージするたびに、過去・現在・未来のドキュメントを整備。</p>
+      <ul class="features-list">
+        <li>
+          <div class="feature-icon">📝</div>
+          <div class="feature-content">
+            <h3>PRサマリー<span class="feature-tag">現在</span></h3>
+            <p>レビュワーのために、変更内容を3行で要約。「このPR何してるの？」がすぐ分かる。</p>
+          </div>
+        </li>
+        <li>
+          <div class="feature-icon">📖</div>
+          <div class="feature-content">
+            <h3>README更新<span class="feature-tag">過去</span></h3>
+            <p>機能変更があれば、READMEの更新を自動で提案。ドキュメントと実装のズレを防ぐ。</p>
+          </div>
+        </li>
+        <li>
+          <div class="feature-icon">🗂️</div>
+          <div class="feature-content">
+            <h3>ADR生成<span class="feature-tag">未来</span></h3>
+            <p>アーキテクチャの変更理由を docs/adr/ に自動記録。「なぜこうなった？」に答える。</p>
+          </div>
+        </li>
+      </ul>
+    </section>
 
-    <footer>
-      <p><a href="/legal/commerce.html">特定商取引法に基づく表記</a></p>
-      <p style="margin-top: 12px;">&copy; 2025 Diff Note</p>
-    </footer>
+    <!-- Pricing -->
+    <section>
+      <h2>料金</h2>
+      <p>まずは無料で試して、気に入ったらProへ。</p>
+      <div class="pricing-grid">
+        <div class="pricing-card">
+          <h3>Free</h3>
+          <p class="price">¥0</p>
+          <p class="price-note">ずっと無料</p>
+          <ul>
+            <li>月10件までPR解析</li>
+            <li>PRサマリー生成</li>
+            <li>パブリックリポジトリ対応</li>
+          </ul>
+          <a href="https://github.com/apps/diff-note" class="pricing-cta secondary">無料で始める</a>
+        </div>
+        <div class="pricing-card featured">
+          <h3>Pro</h3>
+          <p class="price">¥980<span> / 月（税込）</span></p>
+          <p class="price-note">ドキュメント保険として</p>
+          <ul>
+            <li>PR解析数 無制限</li>
+            <li>PRサマリー生成</li>
+            <li>README更新提案</li>
+            <li>ADR自動生成</li>
+            <li>プライベートリポジトリ対応</li>
+          </ul>
+          <a href="https://buy.stripe.com/5kA6pWeKe6cS0mc5kk" class="pricing-cta primary">Proを始める</a>
+        </div>
+      </div>
+      <div class="value-box">
+        <p><strong>月980円</strong>は、1時間のドキュメント作業を省けば元が取れる価格。<br>「書かなきゃ」のストレスから解放されます。</p>
+      </div>
+    </section>
   </div>
+
+  <footer>
+    <div class="footer-links">
+      <a href="/legal/commerce.html">特定商取引法に基づく表記</a>
+    </div>
+    <p>&copy; 2025 Diff Note</p>
+  </footer>
 </body>
 </html>
